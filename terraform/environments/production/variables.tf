@@ -346,6 +346,63 @@ variable "classification_openai_api_key" {
   }
 }
 
+variable "github_bot_model" {
+  description = "Model the GitHub bot starts a session with when no per-repository, per-user, or per-request override applies. A catalog id of the form \"<provider>/<model>\"; a bare \"claude-\" or \"gpt-\" id is normalized to its provider by the bots' resolver."
+  type        = string
+  default     = "anthropic/claude-haiku-4-5"
+  nullable    = false
+
+  # Each prefix must be followed by an actual model id: a bare "xai/" or
+  # "claude-" satisfies startswith but names no model, and would reach the bot
+  # as a value its resolver accepts and then sends to the provider verbatim.
+  validation {
+    condition = anytrue([
+      for prefix in ["anthropic/", "claude-", "openai/", "gpt-", "xai/"] :
+      startswith(var.github_bot_model, prefix) &&
+      trimspace(substr(var.github_bot_model, length(prefix), -1)) != ""
+    ])
+    error_message = "github_bot_model must be an Anthropic id (\"anthropic/...\" or \"claude-...\"), an OpenAI id (\"openai/...\" or \"gpt-...\"), or an xAI id (\"xai/...\"), naming a model after the prefix."
+  }
+}
+
+variable "linear_bot_model" {
+  description = "Model the Linear bot starts a session with when no per-repository, per-user, or per-request override applies. A catalog id of the form \"<provider>/<model>\"; a bare \"claude-\" or \"gpt-\" id is normalized to its provider by the bots' resolver."
+  type        = string
+  default     = "claude-sonnet-4-6"
+  nullable    = false
+
+  # Each prefix must be followed by an actual model id: a bare "xai/" or
+  # "claude-" satisfies startswith but names no model, and would reach the bot
+  # as a value its resolver accepts and then sends to the provider verbatim.
+  validation {
+    condition = anytrue([
+      for prefix in ["anthropic/", "claude-", "openai/", "gpt-", "xai/"] :
+      startswith(var.linear_bot_model, prefix) &&
+      trimspace(substr(var.linear_bot_model, length(prefix), -1)) != ""
+    ])
+    error_message = "linear_bot_model must be an Anthropic id (\"anthropic/...\" or \"claude-...\"), an OpenAI id (\"openai/...\" or \"gpt-...\"), or an xAI id (\"xai/...\"), naming a model after the prefix."
+  }
+}
+
+variable "slack_bot_model" {
+  description = "Model the Slack bot starts a session with when no per-repository, per-user, or per-request override applies. A catalog id of the form \"<provider>/<model>\"; a bare \"claude-\" or \"gpt-\" id is normalized to its provider by the bots' resolver."
+  type        = string
+  default     = "claude-haiku-4-5"
+  nullable    = false
+
+  # Each prefix must be followed by an actual model id: a bare "xai/" or
+  # "claude-" satisfies startswith but names no model, and would reach the bot
+  # as a value its resolver accepts and then sends to the provider verbatim.
+  validation {
+    condition = anytrue([
+      for prefix in ["anthropic/", "claude-", "openai/", "gpt-", "xai/"] :
+      startswith(var.slack_bot_model, prefix) &&
+      trimspace(substr(var.slack_bot_model, length(prefix), -1)) != ""
+    ])
+    error_message = "slack_bot_model must be an Anthropic id (\"anthropic/...\" or \"claude-...\"), an OpenAI id (\"openai/...\" or \"gpt-...\"), or an xAI id (\"xai/...\"), naming a model after the prefix."
+  }
+}
+
 # =============================================================================
 # Security Secrets
 # =============================================================================
