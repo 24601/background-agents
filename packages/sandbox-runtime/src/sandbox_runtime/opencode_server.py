@@ -29,6 +29,18 @@ if TYPE_CHECKING:
 
 _LOG_FORWARD_STREAM_LIMIT_BYTES = 1024 * 1024
 AGENT_TOOLS_GATED_ON_ENV = {"slack-notify.js": "AGENT_SLACK_NOTIFY_ENABLED"}
+# OpenCode provider endpoint overrides, keyed by OpenCode provider id.
+#
+# Setting a provider's *_BASE_URL in the sandbox environment points that
+# provider's SDK client at an OpenAI-compatible gateway (an LLM proxy, a
+# regional endpoint, a self-hosted relay) instead of the vendor's own API.
+# The provider's normal API-key env var is still what authenticates, so a
+# gateway is configured as a key/base-URL pair. Unset means the vendor
+# default endpoint, which is the behaviour every provider had before.
+PROVIDER_BASE_URL_ENV_VARS = {
+    "openai": "OPENAI_BASE_URL",
+    "xai": "XAI_BASE_URL",
+}
 AGENT_TOOLS_REQUIRING_REPOSITORY: set[str] = set()
 
 
@@ -382,6 +394,24 @@ class OpenCodeServer:
         except Exception as e:
             self.log.warn("managed_oauth.setup_error", exc=e)
 
+    @staticmethod
+    def build_provider_overrides(
+        environ: Mapping[str, str] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Build OpenCode `provider` config from the environment's base-URL overrides.
+
+        Returns an entry only for providers whose *_BASE_URL is set to a
+        non-blank value, so providers without an override keep OpenCode's
+        models.dev-derived defaults untouched.
+        """
+        env = os.environ if environ is None else environ
+        overrides: dict[str, dict[str, Any]] = {}
+        for provider, env_var in PROVIDER_BASE_URL_ENV_VARS.items():
+            base_url = (env.get(env_var) or "").strip()
+            if base_url:
+                overrides[provider] = {"options": {"baseURL": base_url}}
+        return overrides
+
     def _resolve_mcp_servers(self) -> list[Mapping[str, Any]]:
         """Resolve MCP servers from session config."""
         return list(self.mcp_servers)
@@ -487,6 +517,14 @@ class OpenCodeServer:
             "model": f"{self.provider}/{self.model}",
             "permission": {"*": {"*": "allow"}},
         }
+
+        provider_overrides = self.build_provider_overrides()
+        if provider_overrides:
+            opencode_config["provider"] = provider_overrides
+            self.log.info(
+                "opencode.provider_endpoint_override",
+                providers=sorted(provider_overrides),
+            )
 
         # Inject MCP servers
         mcp_servers = self._resolve_mcp_servers()
