@@ -124,6 +124,15 @@ export const MODEL_CATALOG = [
           default: "high",
         },
       },
+      {
+        id: "anthropic/claude-fable-5-1",
+        name: "Claude Fable 5.1",
+        description: "Demanding reasoning and long-horizon agentic work",
+        reasoning: {
+          efforts: ["low", "medium", "high", "xhigh", "max"],
+          default: "high",
+        },
+      },
     ],
   },
   {
@@ -349,6 +358,27 @@ export function normalizeValidModels(modelIds: readonly string[]): ValidModel[] 
     if (isValidModel(normalized)) validModels.add(normalized);
   }
   return [...validModels];
+}
+
+export interface ModelPreferenceChange {
+  modelId: ValidModel;
+  enabled: boolean;
+}
+
+/** Apply ordered set-membership changes while preserving the order of existing models. */
+export function applyModelPreferenceChanges(
+  enabledModels: readonly ValidModel[],
+  changes: readonly ModelPreferenceChange[]
+): ValidModel[] {
+  const next = new Set(enabledModels);
+  for (const { modelId, enabled } of changes) {
+    if (enabled) {
+      next.add(modelId);
+    } else {
+      next.delete(modelId);
+    }
+  }
+  return [...next];
 }
 
 /** Resolve a desired model against the enabled catalog using a canonical fallback policy. */

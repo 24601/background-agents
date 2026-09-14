@@ -108,7 +108,8 @@ export class ModalSandboxProvider implements SandboxProvider, ModalImageBuildPro
           repoName: config.repoName,
           controlPlaneUrl: config.controlPlaneUrl,
           sandboxAuthToken: config.sandboxAuthToken,
-          opencodeSessionId: config.opencodeSessionId,
+          agentSessionId: config.agentSessionId,
+          harness: config.harness,
           provider: config.provider,
           model: config.model,
           userEnvVars: config.userEnvVars,
@@ -155,6 +156,7 @@ export class ModalSandboxProvider implements SandboxProvider, ModalImageBuildPro
           controlPlaneUrl: config.controlPlaneUrl,
           repoOwner: config.repoOwner,
           repoName: config.repoName,
+          harness: config.harness,
           provider: config.provider,
           model: config.model,
           userEnvVars: config.userEnvVars,
@@ -170,22 +172,15 @@ export class ModalSandboxProvider implements SandboxProvider, ModalImageBuildPro
         config.correlation
       );
 
-      if (result.success) {
-        return {
-          success: true,
-          sandboxId: result.sandboxId,
-          providerObjectId: result.modalObjectId,
-          codeServerUrl: result.codeServerUrl,
-          codeServerPassword: result.codeServerPassword,
-          vncAccess: createVncAccess(result.vncUrl, result.vncPassword),
-          ttydUrl: result.ttydUrl,
-          tunnelUrls: result.tunnelUrls,
-        };
-      }
-
       return {
-        success: false,
-        error: result.error || "Unknown restore error",
+        success: true,
+        sandboxId: result.sandboxId,
+        providerObjectId: result.modalObjectId,
+        codeServerUrl: result.codeServerUrl,
+        codeServerPassword: result.codeServerPassword,
+        vncAccess: createVncAccess(result.vncUrl, result.vncPassword),
+        ttydUrl: result.ttydUrl,
+        tunnelUrls: result.tunnelUrls,
       };
     } catch (error) {
       if (error instanceof ModalApiError) {
@@ -215,16 +210,9 @@ export class ModalSandboxProvider implements SandboxProvider, ModalImageBuildPro
         config.correlation
       );
 
-      if (result.success && result.imageId) {
-        return {
-          success: true,
-          imageId: result.imageId,
-        };
-      }
-
       return {
-        success: false,
-        error: result.error || "Unknown snapshot error",
+        success: true,
+        imageId: result.imageId,
       };
     } catch (error) {
       if (error instanceof ModalApiError) {
@@ -251,13 +239,7 @@ export class ModalSandboxProvider implements SandboxProvider, ModalImageBuildPro
         },
         config.correlation
       );
-      if (result.success && result.imageId) {
-        return { success: true, imageId: result.imageId };
-      }
-      return {
-        success: false,
-        error: result.error || "Unknown image build snapshot error",
-      };
+      return { success: true, imageId: result.imageId };
     } catch (error) {
       if (error instanceof ModalApiError) {
         throw this.classifyErrorWithStatus(

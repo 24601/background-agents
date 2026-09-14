@@ -10,6 +10,7 @@
  * spawn attempts within the same request.
  */
 
+import { getValidHarnessOrDefault, type HarnessId } from "@open-inspect/shared/harnesses";
 import type { McpServerConfig, SandboxSettings } from "@open-inspect/shared/types/integrations";
 import { extractProviderAndModel } from "@open-inspect/shared/models";
 import type { ServerMessage } from "@open-inspect/shared/types/server-messages";
@@ -584,12 +585,14 @@ export class SandboxLifecycleManager implements SandboxLifecycle {
       if (session.environment_id) {
         selectedImage = await this.lookupImageBuildForSpawn(
           { kind: "environment", id: session.environment_id },
-          repositories
+          repositories,
+          getValidHarnessOrDefault(session.harness)
         );
       } else if (hasRepository && repositories.length === 1) {
         selectedImage = await this.lookupImageBuildForSpawn(
           repoImageBuildScope(repositories[0].repoOwner, repositories[0].repoName),
-          repositories
+          repositories,
+          getValidHarnessOrDefault(session.harness)
         );
       }
 
@@ -610,6 +613,7 @@ export class SandboxLifecycleManager implements SandboxLifecycle {
         repoName: session.repo_name,
         controlPlaneUrl: this.config.controlPlaneUrl,
         sandboxAuthToken,
+        harness: getValidHarnessOrDefault(session.harness),
         provider,
         model: modelId,
         userEnvVars,
@@ -739,12 +743,13 @@ export class SandboxLifecycleManager implements SandboxLifecycle {
    */
   private async lookupImageBuildForSpawn(
     scope: ImageBuildScope,
-    repositories: SessionRepositoryInfo[]
+    repositories: SessionRepositoryInfo[],
+    harness: HarnessId
   ): Promise<SelectedImageBuild | null> {
     if (!this.imageBuildLookup || repositories.length === 0) return null;
     try {
       const image = await this.imageBuildLookup.getLatestReady(scope);
-      const result = await evaluateImageBuildForSpawn(image, repositories);
+      const result = await evaluateImageBuildForSpawn(image, repositories, harness);
       if (result.outcome === "selected") {
         this.log.info("Using prebuilt image", {
           event: "image_build.spawn_selected",
@@ -964,6 +969,7 @@ export class SandboxLifecycleManager implements SandboxLifecycle {
         controlPlaneUrl: this.config.controlPlaneUrl,
         repoOwner: session.repo_owner,
         repoName: session.repo_name,
+        harness: getValidHarnessOrDefault(session.harness),
         provider,
         model: modelId,
         userEnvVars,
@@ -1569,22 +1575,24 @@ export class SandboxLifecycleManager implements SandboxLifecycle {
     }
   }
 
+  /**
+   * Fail the live sandbox after a fatal runtime report and stop it where the
+   * provider allows. Resolves true only when this call took the sandbox down,
+   * which is the caller's cue to re-drive the queue onto a replacement. A row
+   * that is already dead — including one the connect watchdog failed while
+   * its boot was still running — resolves false: there is nothing to
+   * terminate, and re-driving the queue for it would spawn a replacement for
+   * every late report.
+   */
   async terminateFailedSandbox(reason: string): Promise<boolean> {
     const sandbox = this.storage.getSandbox();
-    if (
-      !sandbox ||
-      sandbox.status === "stopped" ||
-      sandbox.status === "stale" ||
-      this.isTerminatingSandbox
-    ) {
+    if (!sandbox || isDeadSandboxStatus(sandbox.status) || this.isTerminatingSandbox) {
       return false;
     }
 
     this.isTerminatingSandbox = true;
-    if (sandbox.status !== "failed") {
-      this.storage.updateSandboxStatus("failed");
-      this.broadcaster.broadcast({ type: "sandbox_status", status: "failed" });
-    }
+    this.storage.updateSandboxStatus("failed");
+    this.broadcaster.broadcast({ type: "sandbox_status", status: "failed" });
     this.reportSandboxError(reason);
     this.clearSandboxAccessState();
 

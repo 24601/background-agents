@@ -26,7 +26,7 @@ import { DEFAULT_MODEL } from "@open-inspect/shared/models";
 import { generateId, hashToken, encryptToken } from "../auth/crypto";
 import { resolveSandboxBackendName } from "../sandbox/provider-name";
 import { createSandboxProviderFromEnv } from "../sandbox/provider-factory";
-import { DEFAULT_SANDBOX_TIMEOUT_SECONDS } from "../sandbox/provider";
+import { resolveExecutionBudgetMs } from "../sandbox/execution-budget";
 import { createImageBuildLookup } from "../image-builds/lookup";
 import { resolveImageBuildProvider } from "../image-builds/provider-policy";
 import { createLogger, parseLogLevel } from "../logger";
@@ -45,6 +45,7 @@ import { McpServerStore } from "../db/mcp-servers";
 import { IntegrationSettingsStore, resolveSlackSettings } from "../db/integration-settings";
 import { SessionIndexStore } from "../db/session-index";
 import { parsePersistedSandboxSettings } from "../sandbox/settings";
+import type { SandboxSettings } from "@open-inspect/shared/types/integrations";
 import { createSourceControlProviderFromEnv, type SourceControlProvider } from "../source-control";
 import { requireRepoSecretsEncryptionKey, requireTokenEncryptionKey } from "../env-validation";
 import type { Env, ClientInfo } from "../types";
@@ -132,6 +133,7 @@ import { SessionDiffStore } from "./diffs/store";
 import { SessionDiffService } from "./diffs/service";
 import { SessionDiffsHandler } from "./http/handlers/session-diffs.handler";
 import { SessionMessengerImpl, type SessionMessenger } from "./messenger";
+import { SessionStatusProjectionStore } from "../db/session-status-projection-store";
 import { SessionStatusService } from "./session-status-service";
 import { createSessionRuntimeClientForTrace } from "./runtime-client";
 import { SessionTitleService } from "./title-service";
@@ -201,17 +203,17 @@ function resolveExecutionTimeoutMs(
   env: Env,
   log: Logger
 ): number {
+  let sandboxSettings: SandboxSettings = {};
   try {
-    const sandboxTimeoutMs = parsePersistedSandboxSettings(
-      sessionCoreRepository.getSession()?.sandbox_settings ?? null
-    ).sandboxTimeoutMs;
     // This watchdog starts before bridge setup, so it must not race the
     // bridge's earlier snapshot-reserved prompt deadline.
-    if (sandboxTimeoutMs !== undefined) return sandboxTimeoutMs;
+    sandboxSettings = parsePersistedSandboxSettings(
+      sessionCoreRepository.getSession()?.sandbox_settings ?? null
+    );
   } catch {
     log.warn("Failed to parse sandbox_settings for execution timeout, using fallback");
   }
-  return parseInt(env.EXECUTION_TIMEOUT_MS || String(DEFAULT_SANDBOX_TIMEOUT_SECONDS * 1000), 10);
+  return resolveExecutionBudgetMs(sandboxSettings, env);
 }
 
 /** Build the session runtime, including authorization verification and lease expiry handling. */
@@ -370,6 +372,7 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     artifactRepository,
     messenger,
     sessionIndexStore,
+    new SessionStatusProjectionStore(db),
     // Parent notifications have no request of their own: each is one hop
     // under this child's trace, with its own request id.
     createSessionRuntimeClientForTrace(env, durableObjectId)
@@ -513,7 +516,10 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     () => messageQueue.processMessageQueue(),
     () => messageQueue.broadcastPromptQueue(),
     budgetService,
-    transaction
+    transaction,
+    (title) => {
+      titleService.applySessionTitleUpdate(title, { onlyIfUnset: true });
+    }
   );
   const runtimeEventHandler = new SandboxRuntimeEventHandler(
     sessionCoreRepository,
@@ -522,7 +528,13 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     messenger,
     diffService,
     (title, options) => titleService.applySessionTitleUpdate(title, options),
-    updateLastActivity
+    updateLastActivity,
+    (messageId, timestamp) =>
+      backgroundTasks.submit(() => callbackService.refreshSlackActivity(messageId, timestamp), {
+        name: "callback.refresh_slack_activity",
+        context: { message_id: messageId },
+      }),
+    log
   );
   const pushService = new SandboxPushService(log, wsManager);
   const sandboxEventProcessor = new SessionSandboxEventProcessor(
@@ -770,7 +782,7 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     autofix: (request, _url, requestLog) => autofixHandler.handle(request, requestLog),
     stop: () => messagesHandler.stop(),
     sandboxEvent: (request) => sandboxHandler.sandboxEvent(request),
-    sandboxError: (request) => sandboxHandler.sandboxError(request),
+    sandboxError: (request, _url, requestLog) => sandboxHandler.sandboxError(request, requestLog),
     createMediaArtifact: (request) => sandboxHandler.createMediaArtifact(request),
     recordAttachment: (request) => {
       const session = sessionCoreRepository.getSession();

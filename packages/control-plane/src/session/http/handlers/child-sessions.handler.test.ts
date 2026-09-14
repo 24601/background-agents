@@ -19,10 +19,12 @@ function createSession(overrides: Partial<SessionRow> = {}): SessionRow {
     branch_name: "feature/test",
     base_sha: null,
     current_sha: null,
-    opencode_session_id: null,
+    agent_session_id: null,
+    harness: "opencode",
     model: "anthropic/claude-haiku-4-5",
     reasoning_effort: null,
     status: "active",
+    status_revision: 1,
     parent_session_id: null,
     spawn_source: "user",
     spawn_depth: 0,
@@ -364,6 +366,7 @@ describe("ChildSessionsHandler", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       repoOwner: "acme",
+      harness: "opencode",
       repoName: "repo",
       repoId: 123,
       model: "anthropic/claude-haiku-4-5",
