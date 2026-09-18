@@ -290,8 +290,8 @@ running for.
 
 The session header names the phase while it runs: "Cloning repository", "Running setup.sh",
 "Starting services", "Installing skills", "Starting agent". Multi-repository sessions add the
-repository, as in "Running setup.sh for acme/api". The session details panel lists every completed
-phase with how long it took, so a slow `setup.sh` is visible rather than inferred. When a script
+repository, as in "Running setup.sh for acme/api". Between phases, its status popover can say what
+just finished, but it does not display a list of completed phases or their durations. When a script
 fails, the header's status popover says which phase failed and for which repository. It shows the
 script's last output lines only for a phase that failed outright, which today means a failed clone
 or a failed `start.sh` in the session's first repository. A `setup.sh` failure, and a `start.sh`
